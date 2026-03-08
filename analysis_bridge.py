@@ -1,0 +1,149 @@
+from __future__ import annotations
+
+import argparse
+import json
+from pathlib import Path
+from typing import Any
+
+from scan_parser import ParsedScan, parse_scan_file
+
+
+BASE_DIR = Path(__file__).resolve().parent
+CLAUDE_PATH = BASE_DIR / "CLAUDE.md"
+COMMON_PATTERNS_PATH = BASE_DIR / "common_patterns.md"
+SERVICE_SKILL_PATHS = {
+    "ec2": BASE_DIR / "ec2_skill.md",
+    "s3": BASE_DIR / "s3_skill.md",
+    "iam": BASE_DIR / "iam_skill_improved.md",
+    "vpc": BASE_DIR / "vpc_skill_improved.md",
+}
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Build a generic LLM-ready CloudSentinel analysis bundle."
+    )
+    parser.add_argument("--scan-file", required=True, help="Path to scanner output text.")
+    parser.add_argument(
+        "--output-file",
+        help="Optional path to write the analysis bundle JSON.",
+    )
+    parser.add_argument(
+        "--include-raw-text",
+        action="store_true",
+        help="Include the full raw scan text in the embedded parsed scan payload.",
+    )
+    parser.add_argument(
+        "--include-raw-command-bodies",
+        action="store_true",
+        help="Include each raw command body in the embedded parsed scan payload.",
+    )
+    return parser.parse_args()
+
+
+def read_text(path: Path) -> str:
+    return path.read_text(encoding="utf-8")
+
+
+def get_service_skill_path(primary_service: str) -> Path:
+    try:
+        return SERVICE_SKILL_PATHS[primary_service]
+    except KeyError as exc:
+        raise ValueError(f"Unsupported primary service: {primary_service}") from exc
+
+
+def make_scan_summary(parsed_scan: ParsedScan) -> dict[str, Any]:
+    return {
+        "primary_service": parsed_scan.primary_service,
+        "scan_timestamp": parsed_scan.scan_timestamp,
+        "section_count": len(parsed_scan.sections),
+        "dependency_services": parsed_scan.dependency_services,
+        "total_commands": parsed_scan.total_commands,
+        "total_error_commands": parsed_scan.total_error_commands,
+    }
+
+
+def compose_user_prompt(
+    *,
+    primary_service: str,
+    common_patterns_text: str,
+    service_skill_text: str,
+    parsed_scan_payload: dict[str, Any],
+) -> str:
+    evidence_json = json.dumps(parsed_scan_payload, indent=2, sort_keys=True)
+    return (
+        f"Primary service: {primary_service}\n\n"
+        "Use the system prompt as the CloudSentinel contract. "
+        "Use the common patterns and service skill below as supporting analysis guidance. "
+        "Analyze only the scanned scope. Return valid JSON only.\n\n"
+        "=== COMMON PATTERNS ===\n"
+        f"{common_patterns_text.strip()}\n\n"
+        "=== PRIMARY SERVICE SKILL ===\n"
+        f"{service_skill_text.strip()}\n\n"
+        "=== PARSED SCAN EVIDENCE JSON ===\n"
+        f"{evidence_json}\n"
+    )
+
+
+def build_analysis_bundle(
+    parsed_scan: ParsedScan,
+    *,
+    scan_source: str,
+    include_raw_text: bool = False,
+    include_raw_command_bodies: bool = False,
+) -> dict[str, Any]:
+    claude_text = read_text(CLAUDE_PATH)
+    common_patterns_text = read_text(COMMON_PATTERNS_PATH)
+    service_skill_path = get_service_skill_path(parsed_scan.primary_service)
+    service_skill_text = read_text(service_skill_path)
+    parsed_scan_payload = parsed_scan.to_dict(
+        include_raw_text=include_raw_text,
+        include_raw_bodies=include_raw_command_bodies,
+    )
+
+    return {
+        "service": parsed_scan.primary_service,
+        "scan_source": scan_source,
+        "scan_summary": make_scan_summary(parsed_scan),
+        "contract_files": {
+            "claude": str(CLAUDE_PATH),
+            "common_patterns": str(COMMON_PATTERNS_PATH),
+            "service_skill": str(service_skill_path),
+        },
+        "parsed_scan": parsed_scan_payload,
+        "llm_request": {
+            "response_format": "json_object",
+            "system_prompt": claude_text,
+            "user_prompt": compose_user_prompt(
+                primary_service=parsed_scan.primary_service,
+                common_patterns_text=common_patterns_text,
+                service_skill_text=service_skill_text,
+                parsed_scan_payload=parsed_scan_payload,
+            ),
+        },
+    }
+
+
+def write_output(payload: dict[str, Any], output_file: str | None) -> None:
+    rendered = json.dumps(payload, indent=2, sort_keys=True)
+    if output_file:
+        Path(output_file).write_text(rendered + "\n", encoding="utf-8")
+        return
+    print(rendered)
+
+
+def main() -> int:
+    args = parse_args()
+    parsed_scan = parse_scan_file(args.scan_file)
+    bundle = build_analysis_bundle(
+        parsed_scan,
+        scan_source=str(Path(args.scan_file).resolve()),
+        include_raw_text=args.include_raw_text,
+        include_raw_command_bodies=args.include_raw_command_bodies,
+    )
+    write_output(bundle, args.output_file)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
