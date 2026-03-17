@@ -1,4 +1,4 @@
-import { Server, Database, User, Network, Loader2, CheckCircle2, XCircle } from 'lucide-react';
+import { Server, Database, User, Network, HardDrive, Image, Globe, Loader2, CheckCircle2, XCircle } from 'lucide-react';
 import { ServiceType } from '@/lib/types';
 
 const serviceIcons: Record<ServiceType, React.ReactNode> = {
@@ -6,6 +6,10 @@ const serviceIcons: Record<ServiceType, React.ReactNode> = {
   s3: <Database size={18} />,
   iam: <User size={18} />,
   vpc: <Network size={18} />,
+  rds: <Database size={18} />,
+  ebs: <HardDrive size={18} />,
+  ami: <Image size={18} />,
+  elb: <Globe size={18} />,
 };
 
 const serviceLabels: Record<ServiceType, string> = {
@@ -13,6 +17,10 @@ const serviceLabels: Record<ServiceType, string> = {
   s3: 'S3',
   iam: 'IAM',
   vpc: 'VPC',
+  rds: 'RDS',
+  ebs: 'EBS',
+  ami: 'AMI',
+  elb: 'ELB',
 };
 
 export type ServiceStatus = 'pending' | 'scanning' | 'done' | 'error';

@@ -2,7 +2,8 @@
 """CloudSentinel — end-to-end pipeline.
 
 Runs a scanner, parses the output, builds the analysis prompt,
-and pipes it to the Claude Code CLI. No API key needed.
+and pipes it to the configured AI CLI. No API key wiring is needed here
+as long as the selected CLI is already authenticated.
 
 Importable by api.py:
     from cloudsentinel import run_pipeline
@@ -13,8 +14,6 @@ from __future__ import annotations
 import importlib
 import json
 import os
-import subprocess
-import sys
 import threading
 from argparse import Namespace
 from contextlib import contextmanager
@@ -22,12 +21,13 @@ from pathlib import Path
 from typing import Callable
 
 from analysis_bridge import build_analysis_bundle
+from llm_runner import extract_json_from_response, resolve_llm_provider, run_llm
 from scan_parser import parse_scan_text
 
 
 BASE_DIR = Path(__file__).resolve().parent
 
-SUPPORTED_SERVICES = {"ec2", "s3", "iam", "vpc"}
+SUPPORTED_SERVICES = {"ec2", "s3", "iam", "vpc", "rds", "ebs", "ami", "elb"}
 
 # Only one scan runs at a time — prevents concurrent env-var conflicts.
 _scan_lock = threading.Lock()
@@ -81,51 +81,6 @@ def _scanner_args(*, region: str) -> Namespace:
     )
 
 
-# ── Claude CLI ────────────────────────────────────────────────────────────────
-
-def _call_claude(user_prompt: str) -> str:
-    cmd = ["claude", "--print", "--output-format", "text", "--tools", ""]
-    try:
-        result = subprocess.run(
-            cmd,
-            input=user_prompt,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            cwd=str(BASE_DIR),
-        )
-    except FileNotFoundError:
-        raise RuntimeError(
-            "'claude' command not found. "
-            "Make sure Claude Code CLI is installed and on your PATH."
-        )
-    if result.returncode != 0:
-        raise RuntimeError(
-            f"Claude CLI exited with code {result.returncode}.\n"
-            + (result.stderr.strip() or "(no stderr)")
-        )
-    return result.stdout
-
-
-def _strip_fences(text: str) -> str:
-    """Remove markdown code fences if Claude wrapped the JSON in them."""
-    stripped = text.strip()
-    if not stripped.startswith("```"):
-        return stripped
-    lines = stripped.splitlines()
-    inner: list[str] = []
-    in_block = False
-    for line in lines:
-        if line.startswith("```") and not in_block:
-            in_block = True
-            continue
-        if line.startswith("```") and in_block:
-            break
-        if in_block:
-            inner.append(line)
-    return "\n".join(inner).strip()
-
-
 # ── Main pipeline ─────────────────────────────────────────────────────────────
 
 def run_pipeline(
@@ -135,6 +90,7 @@ def run_pipeline(
     access_key: str,
     secret_key: str,
     session_token: str | None = None,
+    llm_provider: str | None = None,
     on_progress: Callable[[str], None] | None = None,
 ) -> str:
     """
@@ -180,17 +136,26 @@ def run_pipeline(
                 parsed_scan,
                 scan_source=f"{service}:{region}",
             )
+            resolved_provider = resolve_llm_provider(llm_provider)
             user_prompt = bundle["llm_request"]["user_prompt"]
+            system_prompt = bundle["llm_request"]["system_prompt"]
 
-            # 4. Send to Claude
-            progress("AI is analyzing findings — this may take a minute...")
-            raw_output = _call_claude(user_prompt)
+            # 4. Send to the selected provider
+            progress(
+                f"{resolved_provider.upper()} is analyzing findings — this may take a minute..."
+            )
+            raw_output = run_llm(
+                system_prompt=system_prompt,
+                user_prompt=user_prompt,
+                provider=resolved_provider,
+                cwd=BASE_DIR,
+            ).output
 
     # 5. Clean and validate JSON
-    clean = _strip_fences(raw_output)
+    clean = extract_json_from_response(raw_output)
     try:
         parsed = json.loads(clean)
         return json.dumps(parsed, indent=2, sort_keys=False)
     except json.JSONDecodeError:
-        # Return raw if Claude didn't produce valid JSON for some reason
+        # Return raw if the provider didn't produce valid JSON for some reason
         return clean

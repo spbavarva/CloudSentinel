@@ -1,7 +1,7 @@
 import { useState } from 'react';
-import { Shield, Server, Database, User, Network, Eye, EyeOff, ChevronDown, ChevronUp, Loader2 } from 'lucide-react';
+import { Shield, Server, Database, User, Network, HardDrive, Image, Globe, Eye, EyeOff, ChevronDown, ChevronUp, Loader2 } from 'lucide-react';
 import { motion } from 'framer-motion';
-import { ServiceType } from '@/lib/types';
+import { LLMProvider, ServiceType } from '@/lib/types';
 
 const AWS_REGIONS = [
   'us-east-1', 'us-east-2', 'us-west-1', 'us-west-2',
@@ -14,6 +14,16 @@ const SERVICES: { id: ServiceType; label: string; icon: React.ReactNode }[] = [
   { id: 's3', label: 'S3', icon: <Database size={20} /> },
   { id: 'iam', label: 'IAM', icon: <User size={20} /> },
   { id: 'vpc', label: 'VPC', icon: <Network size={20} /> },
+  { id: 'rds', label: 'RDS', icon: <Database size={20} /> },
+  { id: 'ebs', label: 'EBS', icon: <HardDrive size={20} /> },
+  { id: 'ami', label: 'AMI', icon: <Image size={20} /> },
+  { id: 'elb', label: 'ELB', icon: <Globe size={20} /> },
+];
+
+const LLM_PROVIDERS: { id: LLMProvider; label: string }[] = [
+  { id: 'codex', label: 'Codex' },
+  { id: 'claude', label: 'Claude' },
+  { id: 'auto', label: 'Auto Detect' },
 ];
 
 interface ScanConfigProps {
@@ -23,6 +33,7 @@ interface ScanConfigProps {
     region: string;
     sessionToken: string | null;
     services: ServiceType[];
+    llmProvider: LLMProvider;
   }) => void;
   isScanning: boolean;
   backendOnline: boolean | null;
@@ -30,6 +41,7 @@ interface ScanConfigProps {
     accessKey: string;
     secretKey: string;
     region: string;
+    llmProvider: LLMProvider;
   };
 }
 
@@ -37,10 +49,20 @@ export default function ScanConfiguration({ onStartScan, isScanning, backendOnli
   const [accessKey, setAccessKey] = useState(initialConfig?.accessKey || '');
   const [secretKey, setSecretKey] = useState(initialConfig?.secretKey || '');
   const [region, setRegion] = useState(initialConfig?.region || 'us-east-1');
+  const [llmProvider, setLlmProvider] = useState<LLMProvider>(initialConfig?.llmProvider || 'codex');
   const [sessionToken, setSessionToken] = useState('');
   const [showSecret, setShowSecret] = useState(false);
   const [showSessionToken, setShowSessionToken] = useState(false);
-  const [selectedServices, setSelectedServices] = useState<ServiceType[]>(['ec2', 's3', 'iam', 'vpc']);
+  const [selectedServices, setSelectedServices] = useState<ServiceType[]>([
+    'ec2',
+    's3',
+    'iam',
+    'vpc',
+    'rds',
+    'ebs',
+    'ami',
+    'elb',
+  ]);
 
   const toggleService = (id: ServiceType) => {
     setSelectedServices(prev =>
@@ -59,6 +81,7 @@ export default function ScanConfiguration({ onStartScan, isScanning, backendOnli
       region,
       sessionToken: sessionToken.trim() || null,
       services: selectedServices,
+      llmProvider,
     });
   };
 
@@ -141,6 +164,24 @@ export default function ScanConfiguration({ onStartScan, isScanning, backendOnli
                   <option key={r} value={r}>{r}</option>
                 ))}
               </select>
+            </div>
+
+            <div>
+              <label className="mb-1.5 block text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                AI Provider
+              </label>
+              <select
+                value={llmProvider}
+                onChange={e => setLlmProvider(e.target.value as LLMProvider)}
+                className="w-full rounded-lg border border-border bg-muted px-3 py-2.5 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+              >
+                {LLM_PROVIDERS.map(provider => (
+                  <option key={provider.id} value={provider.id}>{provider.label}</option>
+                ))}
+              </select>
+              <p className="mt-1.5 text-xs text-muted-foreground">
+                Codex is the default for this build. Claude remains available if the local `claude` CLI is installed.
+              </p>
             </div>
 
             {/* Session Token (collapsible) */}

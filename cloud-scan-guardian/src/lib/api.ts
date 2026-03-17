@@ -1,8 +1,8 @@
-import { ScanRequest, SSEEvent } from './types';
+import { HealthResponse, ScanRequest, SSEEvent } from './types';
 
 export const API_BASE_URL = 'http://localhost:8000';
 
-export async function checkHealth(): Promise<{ status: string; supported_services: string[] }> {
+export async function checkHealth(): Promise<HealthResponse> {
   const res = await fetch(`${API_BASE_URL}/health`);
   if (!res.ok) throw new Error('Health check failed');
   return res.json();

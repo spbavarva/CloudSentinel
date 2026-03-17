@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Shield, RotateCcw } from 'lucide-react';
-import { ServiceType, ServiceAnalysis, SSEEvent } from '@/lib/types';
+import { LLMProvider, ServiceType, ServiceAnalysis, SSEEvent } from '@/lib/types';
 import { checkHealth, startScan } from '@/lib/api';
 import ScanConfiguration from '@/components/ScanConfiguration';
 import ScanProgress, { ServiceStatus } from '@/components/ScanProgress';
@@ -22,7 +22,7 @@ export default function Index() {
   const [results, setResults] = useState<Map<ServiceType, ServiceAnalysis>>(new Map());
   const [errors, setErrors] = useState<Map<ServiceType, string>>(new Map());
   const [scanDone, setScanDone] = useState(false);
-  const [savedConfig, setSavedConfig] = useState<{ accessKey: string; secretKey: string; region: string } | undefined>();
+  const [savedConfig, setSavedConfig] = useState<{ accessKey: string; secretKey: string; region: string; llmProvider: LLMProvider } | undefined>();
   const abortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
@@ -37,8 +37,14 @@ export default function Index() {
     region: string;
     sessionToken: string | null;
     services: ServiceType[];
+    llmProvider: LLMProvider;
   }) => {
-    setSavedConfig({ accessKey: config.accessKey, secretKey: config.secretKey, region: config.region });
+    setSavedConfig({
+      accessKey: config.accessKey,
+      secretKey: config.secretKey,
+      region: config.region,
+      llmProvider: config.llmProvider,
+    });
     setView('scanning');
     setScanDone(false);
     setResults(new Map());
@@ -91,6 +97,7 @@ export default function Index() {
         access_key: config.accessKey,
         secret_key: config.secretKey,
         session_token: config.sessionToken,
+        llm_provider: config.llmProvider,
       },
       handleEvent,
       controller.signal

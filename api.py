@@ -32,6 +32,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, field_validator
 
 from cloudsentinel import SUPPORTED_SERVICES, run_pipeline
+from llm_runner import SUPPORTED_LLM_PROVIDERS, available_llm_providers, resolve_llm_provider
 
 
 app = FastAPI(title="CloudSentinel API", version="1.0.0")
@@ -53,6 +54,7 @@ class ScanRequest(BaseModel):
     access_key: str
     secret_key: str
     session_token: str | None = None
+    llm_provider: str | None = None
 
     @field_validator("services")
     @classmethod
@@ -66,6 +68,19 @@ class ScanRequest(BaseModel):
         if not v:
             raise ValueError("At least one service must be specified.")
         return v
+
+    @field_validator("llm_provider")
+    @classmethod
+    def validate_llm_provider(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        normalized = v.strip().lower()
+        if normalized not in SUPPORTED_LLM_PROVIDERS:
+            raise ValueError(
+                f"Unsupported llm_provider: {normalized}. "
+                f"Supported: {sorted(SUPPORTED_LLM_PROVIDERS)}"
+            )
+        return normalized
 
 
 # ── SSE helper ────────────────────────────────────────────────────────────────
@@ -109,6 +124,7 @@ async def scan(request: ScanRequest) -> StreamingResponse:
                     access_key=request.access_key,
                     secret_key=request.secret_key,
                     session_token=request.session_token,
+                    llm_provider=request.llm_provider,
                     on_progress=on_progress,
                 ),
             )
@@ -152,4 +168,15 @@ async def scan(request: ScanRequest) -> StreamingResponse:
 
 @app.get("/health")
 async def health() -> dict:
-    return {"status": "ok", "supported_services": sorted(SUPPORTED_SERVICES)}
+    default_provider = None
+    try:
+        default_provider = resolve_llm_provider("auto")
+    except RuntimeError:
+        default_provider = None
+
+    return {
+        "status": "ok",
+        "supported_services": sorted(SUPPORTED_SERVICES),
+        "available_llm_providers": available_llm_providers(),
+        "default_llm_provider": default_provider,
+    }

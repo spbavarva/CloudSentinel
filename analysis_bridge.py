@@ -9,6 +9,7 @@ from scan_parser import ParsedScan, parse_scan_file
 
 
 BASE_DIR = Path(__file__).resolve().parent
+AGENTS_PATH = BASE_DIR / "AGENTS.md"
 CLAUDE_PATH = BASE_DIR / "CLAUDE.md"
 COMMON_PATTERNS_PATH = BASE_DIR / "common_patterns.md"
 SERVICE_SKILL_PATHS = {
@@ -16,6 +17,10 @@ SERVICE_SKILL_PATHS = {
     "s3": BASE_DIR / "s3_skill.md",
     "iam": BASE_DIR / "iam_skill_improved.md",
     "vpc": BASE_DIR / "vpc_skill_improved.md",
+    "rds": BASE_DIR / "rds_skill.md",
+    "ebs": BASE_DIR / "ebs_skill.md",
+    "ami": BASE_DIR / "ami_skill.md",
+    "elb": BASE_DIR / "elb_skill.md",
 }
 
 
@@ -43,6 +48,14 @@ def parse_args() -> argparse.Namespace:
 
 def read_text(path: Path) -> str:
     return path.read_text(encoding="utf-8")
+
+
+def get_contract_prompt_path() -> Path:
+    if AGENTS_PATH.exists():
+        return AGENTS_PATH
+    if CLAUDE_PATH.exists():
+        return CLAUDE_PATH
+    raise FileNotFoundError("Neither AGENTS.md nor CLAUDE.md was found.")
 
 
 def get_service_skill_path(primary_service: str) -> Path:
@@ -92,7 +105,8 @@ def build_analysis_bundle(
     include_raw_text: bool = False,
     include_raw_command_bodies: bool = False,
 ) -> dict[str, Any]:
-    claude_text = read_text(CLAUDE_PATH)
+    contract_path = get_contract_prompt_path()
+    contract_text = read_text(contract_path)
     common_patterns_text = read_text(COMMON_PATTERNS_PATH)
     service_skill_path = get_service_skill_path(parsed_scan.primary_service)
     service_skill_text = read_text(service_skill_path)
@@ -101,19 +115,25 @@ def build_analysis_bundle(
         include_raw_bodies=include_raw_command_bodies,
     )
 
+    contract_files: dict[str, str] = {
+        "contract": str(contract_path),
+        "common_patterns": str(COMMON_PATTERNS_PATH),
+        "service_skill": str(service_skill_path),
+    }
+    if AGENTS_PATH.exists():
+        contract_files["agents"] = str(AGENTS_PATH)
+    if CLAUDE_PATH.exists():
+        contract_files["claude"] = str(CLAUDE_PATH)
+
     return {
         "service": parsed_scan.primary_service,
         "scan_source": scan_source,
         "scan_summary": make_scan_summary(parsed_scan),
-        "contract_files": {
-            "claude": str(CLAUDE_PATH),
-            "common_patterns": str(COMMON_PATTERNS_PATH),
-            "service_skill": str(service_skill_path),
-        },
+        "contract_files": contract_files,
         "parsed_scan": parsed_scan_payload,
         "llm_request": {
             "response_format": "json_object",
-            "system_prompt": claude_text,
+            "system_prompt": contract_text,
             "user_prompt": compose_user_prompt(
                 primary_service=parsed_scan.primary_service,
                 common_patterns_text=common_patterns_text,

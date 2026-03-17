@@ -10,7 +10,7 @@ from typing import Any
 from scan_parser import ParsedScan, parse_scan_file
 
 
-PRIMARY_SERVICES = {"ec2", "s3", "iam", "vpc"}
+PRIMARY_SERVICES = {"ec2", "s3", "iam", "vpc", "rds", "ebs", "ami", "elb"}
 FINDING_SEVERITIES = {"CRITICAL", "HIGH", "MEDIUM", "LOW"}
 FINDING_STATUSES = {"TRUE", "NEEDS_REVIEW"}
 CHAIN_EVIDENCE_STATUSES = {"CONFIRMED", "INFERRED"}
@@ -477,7 +477,12 @@ def validate_analysis_document(
     else:
         service_value = str(service).lower()
         if service_value not in PRIMARY_SERVICES:
-            add_issue(errors, path="$.service", message="service must be one of ec2, s3, iam, vpc.", severity="error")
+            add_issue(
+                errors,
+                path="$.service",
+                message="service must be one of ami, ebs, ec2, elb, iam, rds, s3, vpc.",
+                severity="error",
+            )
         if parsed_scan and service_value != parsed_scan.primary_service:
             add_issue(errors, path="$.service", message="service does not match the parsed scan primary service.", severity="error")
 

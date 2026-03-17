@@ -1,7 +1,8 @@
 export type Severity = 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW' | 'NEEDS_REVIEW';
 export type OverallHealth = 'SECURE' | 'MOSTLY_SECURE' | 'AT_RISK' | 'CRITICAL_RISK' | 'SCAN_INCOMPLETE';
 export type EvidenceStatus = 'CONFIRMED' | 'INFERRED';
-export type ServiceType = 'ec2' | 's3' | 'iam' | 'vpc';
+export type ServiceType = 'ec2' | 's3' | 'iam' | 'vpc' | 'rds' | 'ebs' | 'ami' | 'elb';
+export type LLMProvider = 'auto' | 'codex' | 'claude';
 
 export interface Finding {
   id: string;
@@ -95,4 +96,12 @@ export interface ScanRequest {
   access_key: string;
   secret_key: string;
   session_token: string | null;
+  llm_provider: LLMProvider;
+}
+
+export interface HealthResponse {
+  status: string;
+  supported_services: string[];
+  available_llm_providers: string[];
+  default_llm_provider: string | null;
 }
