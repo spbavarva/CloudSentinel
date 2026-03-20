@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import Callable
 
 from analysis_bridge import build_analysis_bundle
+from credential_utils import sanitize_error
 from llm_runner import extract_json_from_response, resolve_llm_provider, run_llm
 from scan_parser import parse_scan_text
 
@@ -71,11 +72,11 @@ def _load_scanner(service: str) -> Callable[[Namespace], str]:
     return module.build_scan_output  # type: ignore[no-any-return]
 
 
-def _scanner_args(*, region: str) -> Namespace:
+def _scanner_args(*, region: str, profile: str | None = None) -> Namespace:
     """Build the Namespace that every scanner's build_scan_output() expects."""
     return Namespace(
         region=region,
-        profile=None,
+        profile=profile,
         timeout_seconds=60,
         output_file=None,
     )
@@ -87,9 +88,10 @@ def run_pipeline(
     *,
     service: str,
     region: str,
-    access_key: str,
-    secret_key: str,
+    access_key: str | None = None,
+    secret_key: str | None = None,
     session_token: str | None = None,
+    profile: str | None = None,
     llm_provider: str | None = None,
     on_progress: Callable[[str], None] | None = None,
 ) -> str:
@@ -99,57 +101,125 @@ def run_pipeline(
     Blocks the calling thread. Designed to be run inside a thread pool
     when called from the async API server.
 
+    Supports two credential modes:
+    - **Key mode**: pass ``access_key`` and ``secret_key`` (+ optional ``session_token``).
+    - **Profile mode**: pass ``profile`` name — credentials are read from ``~/.aws/credentials``.
+
     Returns the final analysis as a JSON string.
     Calls on_progress(message) at each major step so callers can stream
     progress events to the frontend.
     """
+    use_profile = bool(profile)
+
+    if not use_profile and (not access_key or not secret_key):
+        raise ValueError("Either 'profile' or both 'access_key' and 'secret_key' must be provided.")
+
+    # Collect credential strings for sanitization of any errors.
+    _redact_keys: list[str] = []
+    if access_key:
+        _redact_keys.append(access_key)
+    if secret_key:
+        _redact_keys.append(secret_key)
+    if session_token:
+        _redact_keys.append(session_token)
 
     def progress(msg: str) -> None:
         if on_progress:
             on_progress(msg)
 
-    with _scan_lock:
-        with _aws_env(
-            access_key=access_key,
-            secret_key=secret_key,
-            region=region,
-            session_token=session_token,
-        ):
-            # 1. Run scanner
-            progress(f"Scanning {service.upper()} resources in {region}...")
-            scanner_fn = _load_scanner(service)
-            scan_text = scanner_fn(_scanner_args(region=region))
+    try:
+        with _scan_lock:
+            if use_profile:
+                # Profile mode: set AWS_PROFILE + region only.
+                prev_profile = os.environ.get("AWS_PROFILE")
+                prev_region = os.environ.get("AWS_DEFAULT_REGION")
+                os.environ["AWS_PROFILE"] = profile  # type: ignore[assignment]
+                os.environ["AWS_DEFAULT_REGION"] = region
+                try:
+                    return _run_scan_and_analyze(
+                        service=service,
+                        region=region,
+                        profile=profile,
+                        progress=progress,
+                        llm_provider=llm_provider,
+                    )
+                finally:
+                    if prev_profile is None:
+                        os.environ.pop("AWS_PROFILE", None)
+                    else:
+                        os.environ["AWS_PROFILE"] = prev_profile
+                    if prev_region is None:
+                        os.environ.pop("AWS_DEFAULT_REGION", None)
+                    else:
+                        os.environ["AWS_DEFAULT_REGION"] = prev_region
+            else:
+                assert access_key is not None and secret_key is not None
+                with _aws_env(
+                    access_key=access_key,
+                    secret_key=secret_key,
+                    region=region,
+                    session_token=session_token,
+                ):
+                    return _run_scan_and_analyze(
+                        service=service,
+                        region=region,
+                        profile=None,
+                        progress=progress,
+                        llm_provider=llm_provider,
+                    )
+    except Exception as exc:
+        # Sanitize credentials from any error that bubbles up.
+        safe_msg = sanitize_error(str(exc), _redact_keys)
+        if safe_msg != str(exc):
+            raise RuntimeError(safe_msg) from None
+        raise
 
-            if not scan_text.strip():
-                raise RuntimeError(
-                    "Scanner returned empty output. "
-                    "Check that your AWS credentials are valid and have sufficient permissions."
-                )
 
-            # 2. Parse
-            progress("Parsing scan output...")
-            parsed_scan = parse_scan_text(scan_text)
+def _run_scan_and_analyze(
+    *,
+    service: str,
+    region: str,
+    profile: str | None,
+    progress: Callable[[str], None],
+    llm_provider: str | None,
+) -> str:
+    """Inner pipeline logic shared by key-mode and profile-mode."""
 
-            # 3. Build analysis prompt (service skill is auto-selected from parsed_scan.primary_service)
-            progress("Building analysis prompt...")
-            bundle = build_analysis_bundle(
-                parsed_scan,
-                scan_source=f"{service}:{region}",
-            )
-            resolved_provider = resolve_llm_provider(llm_provider)
-            user_prompt = bundle["llm_request"]["user_prompt"]
-            system_prompt = bundle["llm_request"]["system_prompt"]
+    # 1. Run scanner
+    progress(f"Scanning {service.upper()} resources in {region}...")
+    scanner_fn = _load_scanner(service)
+    scan_text = scanner_fn(_scanner_args(region=region, profile=profile))
 
-            # 4. Send to the selected provider
-            progress(
-                f"{resolved_provider.upper()} is analyzing findings — this may take a minute..."
-            )
-            raw_output = run_llm(
-                system_prompt=system_prompt,
-                user_prompt=user_prompt,
-                provider=resolved_provider,
-                cwd=BASE_DIR,
-            ).output
+    if not scan_text.strip():
+        raise RuntimeError(
+            "Scanner returned empty output. "
+            "Check that your AWS credentials are valid and have sufficient permissions."
+        )
+
+    # 2. Parse
+    progress("Parsing scan output...")
+    parsed_scan = parse_scan_text(scan_text)
+
+    # 3. Build analysis prompt (service skill is auto-selected from parsed_scan.primary_service)
+    progress("Building analysis prompt...")
+    bundle = build_analysis_bundle(
+        parsed_scan,
+        scan_source=f"{service}:{region}",
+    )
+    resolved_provider = resolve_llm_provider(llm_provider)
+    user_prompt = bundle["llm_request"]["user_prompt"]
+    system_prompt = bundle["llm_request"]["system_prompt"]
+
+    # 4. Send to the selected provider
+    progress(
+        f"{resolved_provider.upper()} is analyzing findings — this may take a minute..."
+    )
+    raw_output = run_llm(
+        system_prompt=system_prompt,
+        user_prompt=user_prompt,
+        provider=resolved_provider,
+        cwd=BASE_DIR,
+    ).output
 
     # 5. Clean and validate JSON
     clean = extract_json_from_response(raw_output)
@@ -157,5 +227,4 @@ def run_pipeline(
         parsed = json.loads(clean)
         return json.dumps(parsed, indent=2, sort_keys=False)
     except json.JSONDecodeError:
-        # Return raw if the provider didn't produce valid JSON for some reason
         return clean

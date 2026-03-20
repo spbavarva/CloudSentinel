@@ -30,6 +30,9 @@ Thumbs.db
 .env.*
 credentials.json
 
+# SQLite scan history (contains scan results, regenerated at runtime)
+cloudsentinel.db
+
 # Scan outputs (may contain sensitive AWS data)
 *.scan.txt
 *.scan.json

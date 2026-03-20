@@ -1,4 +1,4 @@
-import { HealthResponse, ScanRequest, SSEEvent } from './types';
+import { AWSCredentials, HealthResponse, ScanRequest, ScanSummary, ScanDetail, SSEEvent } from './types';
 
 export const API_BASE_URL = 'http://localhost:8000';
 
@@ -10,12 +10,25 @@ export async function checkHealth(): Promise<HealthResponse> {
 
 export async function startScan(
   request: ScanRequest,
+  credentials: AWSCredentials | null,
   onEvent: (event: SSEEvent) => void,
   signal?: AbortSignal
 ): Promise<void> {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+  };
+
+  if (credentials) {
+    headers['X-AWS-Access-Key-Id'] = credentials.accessKey;
+    headers['X-AWS-Secret-Access-Key'] = credentials.secretKey;
+    if (credentials.sessionToken) {
+      headers['X-AWS-Session-Token'] = credentials.sessionToken;
+    }
+  }
+
   const res = await fetch(`${API_BASE_URL}/scan`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers,
     body: JSON.stringify(request),
     signal,
   });
@@ -47,4 +60,26 @@ export async function startScan(
       }
     }
   }
+}
+
+// ── Scan history ────────────────────────────────────────────────────────────
+
+export async function listScans(limit = 50): Promise<ScanSummary[]> {
+  const res = await fetch(`${API_BASE_URL}/scans?limit=${limit}`);
+  if (!res.ok) throw new Error('Failed to fetch scan history');
+  const data = await res.json();
+  return data.scans;
+}
+
+export async function getScan(id: string): Promise<ScanDetail> {
+  const res = await fetch(`${API_BASE_URL}/scans/${encodeURIComponent(id)}`);
+  if (!res.ok) throw new Error('Failed to fetch scan detail');
+  return res.json();
+}
+
+export async function deleteSession(sessionId: string): Promise<void> {
+  const res = await fetch(`${API_BASE_URL}/scans/${encodeURIComponent(sessionId)}`, {
+    method: 'DELETE',
+  });
+  if (!res.ok) throw new Error('Failed to delete session');
 }

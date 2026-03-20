@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap');
 
 @tailwind base;
 @tailwind components;
@@ -6,63 +6,54 @@
 
 @layer base {
   :root {
-    --background: 222 28% 7%;
-    --foreground: 210 20% 90%;
+    --background: 240 15% 4%;
+    --foreground: 0 0% 93%;
 
-    --card: 220 25% 11%;
-    --card-foreground: 210 20% 90%;
+    --card: 240 10% 8%;
+    --card-foreground: 0 0% 93%;
 
-    --popover: 220 25% 11%;
-    --popover-foreground: 210 20% 90%;
+    --popover: 240 10% 8%;
+    --popover-foreground: 0 0% 93%;
 
-    --primary: 199 89% 48%;
-    --primary-foreground: 222 28% 7%;
+    --primary: 263 84% 58%;
+    --primary-foreground: 0 0% 100%;
 
-    --secondary: 220 20% 18%;
-    --secondary-foreground: 210 20% 80%;
+    --secondary: 240 8% 14%;
+    --secondary-foreground: 0 0% 75%;
 
-    --muted: 220 15% 16%;
-    --muted-foreground: 215 15% 55%;
+    --muted: 240 8% 12%;
+    --muted-foreground: 240 5% 64%;
 
-    --accent: 220 20% 18%;
-    --accent-foreground: 210 20% 90%;
+    --accent: 240 8% 14%;
+    --accent-foreground: 0 0% 93%;
 
     --destructive: 0 72% 51%;
     --destructive-foreground: 0 0% 100%;
 
-    --border: 220 15% 20%;
-    --input: 220 15% 20%;
-    --ring: 199 89% 48%;
+    --border: 240 8% 15%;
+    --input: 240 8% 15%;
+    --ring: 263 84% 58%;
 
     --radius: 0.75rem;
 
-    /* Severity tokens */
-    --severity-critical: 0 72% 51%;
-    --severity-high: 25 95% 53%;
-    --severity-medium: 45 93% 47%;
-    --severity-low: 215 15% 55%;
-    --severity-needs-review: 270 60% 65%;
+    /* Severity tokens — vibrant */
+    --severity-critical: 0 84% 60%;
+    --severity-high: 25 100% 60%;
+    --severity-medium: 45 100% 55%;
+    --severity-low: 240 5% 55%;
+    --severity-needs-review: 270 70% 65%;
 
     /* Health tokens */
-    --health-secure: 142 71% 45%;
+    --health-secure: 152 82% 50%;
     --health-mostly-secure: 199 89% 48%;
-    --health-at-risk: 25 95% 53%;
-    --health-critical-risk: 0 72% 51%;
-    --health-incomplete: 215 15% 55%;
+    --health-at-risk: 25 100% 60%;
+    --health-critical-risk: 0 84% 60%;
+    --health-incomplete: 240 5% 55%;
 
     /* Surface tokens */
-    --surface-elevated: 220 22% 14%;
-    --surface-overlay: 220 25% 9%;
-    --glow-primary: 199 89% 48%;
-
-    --sidebar-background: 220 25% 9%;
-    --sidebar-foreground: 210 20% 80%;
-    --sidebar-primary: 199 89% 48%;
-    --sidebar-primary-foreground: 222 28% 7%;
-    --sidebar-accent: 220 20% 18%;
-    --sidebar-accent-foreground: 210 20% 90%;
-    --sidebar-border: 220 15% 20%;
-    --sidebar-ring: 199 89% 48%;
+    --surface-elevated: 240 10% 10%;
+    --surface-overlay: 240 12% 6%;
+    --glow-primary: 263 84% 58%;
   }
 }
 
@@ -73,6 +64,10 @@
 
   body {
     @apply bg-background text-foreground font-sans antialiased;
+    background-image:
+      radial-gradient(ellipse 80% 50% at 50% -20%, hsl(263 84% 58% / 0.05), transparent),
+      radial-gradient(ellipse 50% 30% at 80% 100%, hsl(200 90% 50% / 0.03), transparent);
+    min-height: 100vh;
   }
 
   code, .font-mono {
@@ -81,80 +76,73 @@
 }
 
 @layer utilities {
-  .text-severity-critical {
-    color: hsl(var(--severity-critical));
-  }
-  .text-severity-high {
-    color: hsl(var(--severity-high));
-  }
-  .text-severity-medium {
-    color: hsl(var(--severity-medium));
-  }
-  .text-severity-low {
-    color: hsl(var(--severity-low));
-  }
-  .text-severity-needs-review {
-    color: hsl(var(--severity-needs-review));
+  /* Glass card effect */
+  .glass {
+    background: hsl(240 10% 10% / 0.6);
+    backdrop-filter: blur(24px);
+    -webkit-backdrop-filter: blur(24px);
+    border: 1px solid hsl(0 0% 100% / 0.08);
   }
 
-  .bg-severity-critical {
-    background-color: hsl(var(--severity-critical));
-  }
-  .bg-severity-high {
-    background-color: hsl(var(--severity-high));
-  }
-  .bg-severity-medium {
-    background-color: hsl(var(--severity-medium));
-  }
-  .bg-severity-low {
-    background-color: hsl(var(--severity-low));
-  }
-  .bg-severity-needs-review {
-    background-color: hsl(var(--severity-needs-review));
+  .glass-subtle {
+    background: hsl(240 10% 10% / 0.4);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid hsl(0 0% 100% / 0.06);
   }
 
-  .bg-severity-critical\/10 {
-    background-color: hsl(var(--severity-critical) / 0.1);
-  }
-  .bg-severity-high\/10 {
-    background-color: hsl(var(--severity-high) / 0.1);
-  }
-  .bg-severity-medium\/10 {
-    background-color: hsl(var(--severity-medium) / 0.1);
-  }
-  .bg-severity-low\/10 {
-    background-color: hsl(var(--severity-low) / 0.1);
+  .glass-input {
+    background: hsl(240 10% 8% / 0.6);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid hsl(0 0% 100% / 0.08);
   }
 
-  .bg-health-secure {
-    background-color: hsl(var(--health-secure));
-  }
-  .bg-health-mostly-secure {
-    background-color: hsl(var(--health-mostly-secure));
-  }
-  .bg-health-at-risk {
-    background-color: hsl(var(--health-at-risk));
-  }
-  .bg-health-critical-risk {
-    background-color: hsl(var(--health-critical-risk));
-  }
-  .bg-health-incomplete {
-    background-color: hsl(var(--health-incomplete));
+  /* Gradient text */
+  .text-gradient {
+    background: linear-gradient(135deg, hsl(263 84% 68%), hsl(200 90% 60%), hsl(152 82% 55%));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
   }
 
-  .bg-health-secure\/15 {
-    background-color: hsl(var(--health-secure) / 0.15);
-  }
-  .text-health-secure {
-    color: hsl(var(--health-secure));
+  .text-gradient-purple {
+    background: linear-gradient(135deg, hsl(263 84% 68%), hsl(300 70% 65%));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
   }
 
-  .surface-elevated {
-    background-color: hsl(var(--surface-elevated));
-  }
+  /* Severity colors */
+  .text-severity-critical { color: hsl(var(--severity-critical)); }
+  .text-severity-high { color: hsl(var(--severity-high)); }
+  .text-severity-medium { color: hsl(var(--severity-medium)); }
+  .text-severity-low { color: hsl(var(--severity-low)); }
+  .text-severity-needs-review { color: hsl(var(--severity-needs-review)); }
+
+  .bg-severity-critical { background-color: hsl(var(--severity-critical)); }
+  .bg-severity-high { background-color: hsl(var(--severity-high)); }
+  .bg-severity-medium { background-color: hsl(var(--severity-medium)); }
+  .bg-severity-low { background-color: hsl(var(--severity-low)); }
+  .bg-severity-needs-review { background-color: hsl(var(--severity-needs-review)); }
+
+  .bg-severity-critical\/10 { background-color: hsl(var(--severity-critical) / 0.1); }
+  .bg-severity-high\/10 { background-color: hsl(var(--severity-high) / 0.1); }
+  .bg-severity-medium\/10 { background-color: hsl(var(--severity-medium) / 0.1); }
+  .bg-severity-low\/10 { background-color: hsl(var(--severity-low) / 0.1); }
+
+  .bg-health-secure { background-color: hsl(var(--health-secure)); }
+  .bg-health-secure\/15 { background-color: hsl(var(--health-secure) / 0.15); }
+  .text-health-secure { color: hsl(var(--health-secure)); }
+
+  .surface-elevated { background-color: hsl(var(--surface-elevated)); }
 
   .glow-primary {
-    box-shadow: 0 0 20px -5px hsl(var(--glow-primary) / 0.3);
+    box-shadow: 0 0 30px -5px hsl(var(--glow-primary) / 0.4);
+  }
+
+  .glow-primary-soft {
+    box-shadow: 0 0 60px -10px hsl(var(--glow-primary) / 0.15);
   }
 
   .scan-pulse {
@@ -164,5 +152,14 @@
   @keyframes scanPulse {
     0%, 100% { opacity: 1; }
     50% { opacity: 0.5; }
+  }
+
+  /* Subtle hover glow on cards */
+  .card-hover {
+    transition: all 0.2s ease;
+  }
+  .card-hover:hover {
+    border-color: hsl(263 84% 58% / 0.3);
+    box-shadow: 0 0 20px -8px hsl(263 84% 58% / 0.15);
   }
 }

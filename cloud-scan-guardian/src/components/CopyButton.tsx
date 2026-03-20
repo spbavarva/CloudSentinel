@@ -13,10 +13,10 @@ export default function CopyButton({ text }: { text: string }) {
   return (
     <button
       onClick={handleCopy}
-      className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+      className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs text-white/50 hover:text-white transition-colors"
       title="Copy to clipboard"
     >
-      {copied ? <><Check size={12} className="text-health-secure" /> Copied!</> : <><Copy size={12} /> Copy</>}
+      {copied ? <><Check size={11} className="text-health-secure" /> Copied</> : <><Copy size={11} /> Copy</>}
     </button>
   );
 }
