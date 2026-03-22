@@ -26,9 +26,17 @@ from llm_runner import extract_json_from_response, resolve_llm_provider, run_llm
 from scan_parser import parse_scan_text
 
 
-BASE_DIR = Path(__file__).resolve().parent
+BASE_DIR = Path(__file__).resolve().parent          # backend/
+PROJECT_ROOT = BASE_DIR.parent                       # CloudSentinel/
+SCANNERS_DIR = BASE_DIR / "scanners"
 
 SUPPORTED_SERVICES = {"ec2", "s3", "iam", "vpc", "rds", "ebs", "ami", "elb"}
+
+# Ensure scanners/ is importable as top-level modules (e.g. ec2_scanner).
+import sys as _sys
+_scanners_str = str(SCANNERS_DIR)
+if _scanners_str not in _sys.path:
+    _sys.path.insert(0, _scanners_str)
 
 # Only one scan runs at a time — prevents concurrent env-var conflicts.
 _scan_lock = threading.Lock()
@@ -218,7 +226,7 @@ def _run_scan_and_analyze(
         system_prompt=system_prompt,
         user_prompt=user_prompt,
         provider=resolved_provider,
-        cwd=BASE_DIR,
+        cwd=PROJECT_ROOT,
     ).output
 
     # 5. Clean and validate JSON

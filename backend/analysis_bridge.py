@@ -8,19 +8,22 @@ from typing import Any
 from scan_parser import ParsedScan, parse_scan_file
 
 
-BASE_DIR = Path(__file__).resolve().parent
-AGENTS_PATH = BASE_DIR / "AGENTS.md"
-CLAUDE_PATH = BASE_DIR / "CLAUDE.md"
-COMMON_PATTERNS_PATH = BASE_DIR / "common_patterns.md"
+BASE_DIR = Path(__file__).resolve().parent          # backend/
+PROJECT_ROOT = BASE_DIR.parent                       # CloudSentinel/
+SKILLS_DIR = BASE_DIR / "skills"
+
+AGENTS_PATH = PROJECT_ROOT / "AGENTS.md"
+CLAUDE_PATH = PROJECT_ROOT / "CLAUDE.md"
+COMMON_PATTERNS_PATH = PROJECT_ROOT / "common_patterns.md"
 SERVICE_SKILL_PATHS = {
-    "ec2": BASE_DIR / "ec2_skill.md",
-    "s3": BASE_DIR / "s3_skill.md",
-    "iam": BASE_DIR / "iam_skill_improved.md",
-    "vpc": BASE_DIR / "vpc_skill_improved.md",
-    "rds": BASE_DIR / "rds_skill.md",
-    "ebs": BASE_DIR / "ebs_skill.md",
-    "ami": BASE_DIR / "ami_skill.md",
-    "elb": BASE_DIR / "elb_skill.md",
+    "ec2": SKILLS_DIR / "ec2_skill.md",
+    "s3": SKILLS_DIR / "s3_skill.md",
+    "iam": SKILLS_DIR / "iam_skill_improved.md",
+    "vpc": SKILLS_DIR / "vpc_skill_improved.md",
+    "rds": SKILLS_DIR / "rds_skill.md",
+    "ebs": SKILLS_DIR / "ebs_skill.md",
+    "ami": SKILLS_DIR / "ami_skill.md",
+    "elb": SKILLS_DIR / "elb_skill.md",
 }
 
 

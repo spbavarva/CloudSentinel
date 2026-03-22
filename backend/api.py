@@ -54,7 +54,7 @@ app.add_middleware(
 
 # ── Scan history store ───────────────────────────────────────────────────────
 
-store = ScanStore(Path(__file__).resolve().parent / "cloudsentinel.db")
+store = ScanStore(Path(__file__).resolve().parent.parent / "cloudsentinel.db")
 
 
 # ── Startup warning ──────────────────────────────────────────────────────────

@@ -47,7 +47,7 @@ export default function ScanHistoryCard({ sessionId, scans, onSelect, onDelete }
   return (
     <div
       className="group relative glass-subtle rounded-xl p-3 cursor-pointer card-hover transition-all"
-      onClick={() => onSelect(scans[0].id)}
+      onClick={() => onSelect(sessionId)}
     >
       {/* Delete */}
       <button

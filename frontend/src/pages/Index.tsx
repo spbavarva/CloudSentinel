@@ -30,7 +30,7 @@ export default function Index() {
   const [results, setResults] = useState<Map<ServiceType, ServiceAnalysis>>(new Map());
   const [errors, setErrors] = useState<Map<ServiceType, { message: string; category?: ErrorCategory }>>(new Map());
   const [scanDone, setScanDone] = useState(false);
-  const [historyDetail, setHistoryDetail] = useState<ServiceAnalysis | null>(null);
+  const [historyDetails, setHistoryDetails] = useState<ServiceAnalysis[]>([]);
   const abortRef = useRef<AbortController | null>(null);
 
   const { sessions, refresh: refreshHistory, remove: removeSession } = useScanHistory();
@@ -55,7 +55,7 @@ export default function Index() {
     setScanDone(false);
     setResults(new Map());
     setErrors(new Map());
-    setHistoryDetail(null);
+    setHistoryDetails([]);
 
     const progress: ServiceProgress[] = config.services.map(s => ({
       service: s, status: 'pending' as ServiceStatus, message: '',
@@ -130,17 +130,30 @@ export default function Index() {
     setScanDone(false);
   };
 
-  const handleSelectHistoryScan = useCallback(async (scanId: string) => {
+  const handleSelectHistorySession = useCallback(async (sessionId: string) => {
     try {
-      const detail = await getScan(scanId);
-      if (detail.analysis_json) {
-        setHistoryDetail(detail.analysis_json);
+      const scans = sessions.get(sessionId);
+      if (!scans || scans.length === 0) return;
+
+      // Load all completed scans in this session
+      const details = await Promise.all(
+        scans
+          .filter(s => s.status === 'completed')
+          .map(s => getScan(s.id))
+      );
+
+      const analyses = details
+        .map(d => d.analysis_json)
+        .filter((a): a is ServiceAnalysis => a !== null);
+
+      if (analyses.length > 0) {
+        setHistoryDetails(analyses);
         setView('history-detail');
       }
     } catch (err) {
-      console.error('Failed to load scan:', err);
+      console.error('Failed to load session scans:', err);
     }
-  }, []);
+  }, [sessions]);
 
   const handleDeleteSession = useCallback(async (sessionId: string) => {
     await removeSession(sessionId);
@@ -157,7 +170,7 @@ export default function Index() {
     >
       <ScanHistoryPanel
         sessions={sessions}
-        onSelectScan={handleSelectHistoryScan}
+        onSelectScan={handleSelectHistorySession}
         onDeleteSession={handleDeleteSession}
       />
     </motion.div>
@@ -181,7 +194,7 @@ export default function Index() {
               >
                 <ScanHistoryPanel
                   sessions={sessions}
-                  onSelectScan={handleSelectHistoryScan}
+                  onSelectScan={handleSelectHistorySession}
                   onDeleteSession={handleDeleteSession}
                 />
               </motion.div>
@@ -215,14 +228,16 @@ export default function Index() {
                     <span className="text-[10px] text-foreground/40 uppercase tracking-widest font-semibold ml-1">History</span>
                   </div>
 
-                  {/* Cards area — history panel floats level with result card */}
-                  <div className="relative">
+                  {/* Cards area — history panel floats level with result cards */}
+                  <div className="relative space-y-6">
                     {hasHistory && (
                       <div className="hidden lg:block absolute left-[calc(100%+1.5rem)] top-0 w-72">
                         {historyPanel}
                       </div>
                     )}
-                    {historyDetail && <ResultCard analysis={historyDetail} />}
+                    {historyDetails.map((analysis) => (
+                      <ResultCard key={analysis.service} analysis={analysis} />
+                    ))}
                   </div>
 
                   <div className="text-center pt-2">

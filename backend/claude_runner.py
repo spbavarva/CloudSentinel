@@ -27,7 +27,8 @@ from llm_runner import (
 from scan_parser import parse_scan_file
 
 
-BASE_DIR = Path(__file__).resolve().parent
+BASE_DIR = Path(__file__).resolve().parent          # backend/
+PROJECT_ROOT = BASE_DIR.parent                       # CloudSentinel/
 
 
 def parse_args() -> argparse.Namespace:
@@ -108,7 +109,7 @@ def main() -> int:
         user_prompt=user_prompt,
         provider=args.provider,
         model=args.model,
-        cwd=BASE_DIR,
+        cwd=PROJECT_ROOT,
     )
     print(f"[INFO] Provider: {invocation.provider}", file=sys.stderr)
 
