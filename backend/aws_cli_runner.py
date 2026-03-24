@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import shlex
 import subprocess
 import time
@@ -9,7 +10,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, Iterable, Sequence
 
-from scan_cancellation import ScanCancelledError
+from scan_cancellation import ScanCancellationRegistry, ScanCancelledError
 
 
 @dataclass(slots=True)
@@ -47,11 +48,19 @@ class AWSCLIRunner:
         profile: str | None = None,
         timeout_seconds: int = 60,
         should_cancel: Callable[[], bool] | None = None,
+        on_progress: Callable[[dict[str, object]], None] | None = None,
+        env_overrides: dict[str, str] | None = None,
+        session_id: str | None = None,
+        cancellation_registry: ScanCancellationRegistry | None = None,
     ) -> None:
         self.region = region
         self.profile = profile
         self.timeout_seconds = timeout_seconds
         self.should_cancel = should_cancel
+        self.on_progress = on_progress
+        self.env_overrides = env_overrides or {}
+        self.session_id = session_id
+        self.cancellation_registry = cancellation_registry
 
     def run(
         self,
@@ -74,8 +83,26 @@ class AWSCLIRunner:
         if "--no-cli-pager" not in service_args:
             command.append("--no-cli-pager")
 
+        aws_service = service_args[0] if service_args else None
+        command_name = service_args[1] if len(service_args) > 1 else None
+        if self.on_progress:
+            self.on_progress(
+                {
+                    "message": f"Running {label}...",
+                    "phase": "scan",
+                    "progress_kind": "command",
+                    "command_label": label,
+                    "aws_service": aws_service,
+                    "command_name": command_name,
+                    "detail": "Collecting evidence from AWS",
+                    "started_at": datetime.now(timezone.utc).isoformat(),
+                }
+            )
+
         start = time.perf_counter()
         started_at = datetime.now(timezone.utc).isoformat()
+        env = os.environ.copy()
+        env.update(self.env_overrides)
         try:
             process = subprocess.Popen(
                 command,
@@ -83,6 +110,7 @@ class AWSCLIRunner:
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
+                env=env,
             )
         except FileNotFoundError as exc:
             duration_ms = int((time.perf_counter() - start) * 1000)
@@ -96,7 +124,14 @@ class AWSCLIRunner:
                 stderr=str(exc),
             )
 
+        if self.cancellation_registry and self.session_id:
+            self.cancellation_registry.register_process(self.session_id, process)
+
         try:
+            if self.should_cancel and self.should_cancel():
+                process.kill()
+                process.communicate()
+                raise ScanCancelledError(f"Scan cancelled by user during {label}.")
             while True:
                 try:
                     stdout, stderr = process.communicate(timeout=0.25)
@@ -131,6 +166,8 @@ class AWSCLIRunner:
                             stderr=stderr,
                         )
         finally:
+            if self.cancellation_registry and self.session_id:
+                self.cancellation_registry.unregister_process(self.session_id, process)
             if process.poll() is None:
                 process.kill()
                 process.communicate()

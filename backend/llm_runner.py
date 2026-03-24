@@ -4,14 +4,17 @@ import os
 import shutil
 import subprocess
 import tempfile
+import time
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Callable
+from typing import Any, Callable
 
-from scan_cancellation import ScanCancelledError
+from scan_cancellation import ScanCancellationRegistry, ScanCancelledError
 
 
 SUPPORTED_LLM_PROVIDERS = {"auto", "codex", "claude"}
+LLMProgressCallback = Callable[[dict[str, Any]], None]
 
 
 @dataclass(slots=True)
@@ -78,14 +81,57 @@ def extract_json_from_response(text: str) -> str:
     return "\n".join(inner_lines).strip()
 
 
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
 def _run_process(
     *,
     cmd: list[str],
     cwd: Path,
     input_text: str,
     cancel_label: str,
+    provider: str,
     should_cancel: Callable[[], bool] | None = None,
+    on_progress: LLMProgressCallback | None = None,
+    session_id: str | None = None,
+    cancellation_registry: ScanCancellationRegistry | None = None,
 ) -> subprocess.CompletedProcess[str]:
+    if should_cancel and should_cancel():
+        raise ScanCancelledError(f"Scan cancelled by user during {cancel_label}.")
+
+    start_time = time.monotonic()
+
+    def emit_progress(
+        message: str,
+        *,
+        detail: str | None = None,
+        ai_stage: str,
+        include_elapsed: bool = True,
+    ) -> None:
+        if not on_progress:
+            return
+
+        payload: dict[str, Any] = {
+            "message": message,
+            "phase": "analysis",
+            "progress_kind": "ai",
+            "provider": provider,
+            "ai_stage": ai_stage,
+            "started_at": _now_iso(),
+        }
+        if detail:
+            payload["detail"] = detail
+        if include_elapsed:
+            payload["elapsed_seconds"] = max(0, int(time.monotonic() - start_time))
+        on_progress(payload)
+
+    emit_progress(
+        f"Launching {provider.upper()} CLI...",
+        detail=f"Starting the {provider.upper()} analysis process",
+        ai_stage="launch",
+        include_elapsed=False,
+    )
     try:
         process = subprocess.Popen(
             cmd,
@@ -99,11 +145,24 @@ def _run_process(
     except FileNotFoundError:
         raise
 
+    if cancellation_registry and session_id:
+        cancellation_registry.register_process(session_id, process)
+
     pending_input: str | None = input_text
     try:
+        emit_progress(
+            f"{provider.upper()} process started.",
+            detail=f"Waiting for the {provider.upper()} CLI to finish",
+            ai_stage="started",
+        )
         while True:
             try:
                 stdout, stderr = process.communicate(input=pending_input, timeout=0.25)
+                emit_progress(
+                    f"{provider.upper()} response received.",
+                    detail=f"Processing the final {provider.upper()} output",
+                    ai_stage="response_received",
+                )
                 return subprocess.CompletedProcess(
                     args=cmd,
                     returncode=process.returncode,
@@ -117,6 +176,8 @@ def _run_process(
                     process.communicate()
                     raise ScanCancelledError(f"Scan cancelled by user during {cancel_label}.")
     finally:
+        if cancellation_registry and session_id:
+            cancellation_registry.unregister_process(session_id, process)
         if process.poll() is None:
             process.kill()
             process.communicate()
@@ -129,6 +190,9 @@ def run_claude(
     cwd: Path,
     model: str | None = None,
     should_cancel: Callable[[], bool] | None = None,
+    on_progress: LLMProgressCallback | None = None,
+    session_id: str | None = None,
+    cancellation_registry: ScanCancellationRegistry | None = None,
 ) -> str:
     """Run Claude CLI with explicit system prompt via --system-prompt flag.
 
@@ -147,7 +211,11 @@ def run_claude(
             cwd=cwd,
             input_text=user_prompt,
             cancel_label="Claude analysis",
+            provider="claude",
             should_cancel=should_cancel,
+            on_progress=on_progress,
+            session_id=session_id,
+            cancellation_registry=cancellation_registry,
         )
     except FileNotFoundError as exc:
         raise RuntimeError(
@@ -170,6 +238,9 @@ def run_codex(
     cwd: Path,
     model: str | None = None,
     should_cancel: Callable[[], bool] | None = None,
+    on_progress: LLMProgressCallback | None = None,
+    session_id: str | None = None,
+    cancellation_registry: ScanCancellationRegistry | None = None,
 ) -> str:
     """Run Codex CLI with user_prompt only.
 
@@ -206,7 +277,11 @@ def run_codex(
             cwd=cwd,
             input_text=user_prompt,
             cancel_label="Codex analysis",
+            provider="codex",
             should_cancel=should_cancel,
+            on_progress=on_progress,
+            session_id=session_id,
+            cancellation_registry=cancellation_registry,
         )
     except FileNotFoundError as exc:
         output_path.unlink(missing_ok=True)
@@ -225,6 +300,18 @@ def run_codex(
         if not output_path.exists():
             raise RuntimeError("Codex CLI did not write a final response file.")
 
+        if on_progress:
+            on_progress(
+                {
+                    "message": "Reading final CODEX response...",
+                    "phase": "analysis",
+                    "progress_kind": "ai",
+                    "provider": "codex",
+                    "ai_stage": "reading_output",
+                    "detail": "Loading the final response file written by CODEX",
+                    "started_at": _now_iso(),
+                }
+            )
         content = output_path.read_text(encoding="utf-8").strip()
         if not content:
             raise RuntimeError("Codex CLI returned an empty final response.")
@@ -241,6 +328,9 @@ def run_llm(
     model: str | None = None,
     cwd: Path,
     should_cancel: Callable[[], bool] | None = None,
+    on_progress: LLMProgressCallback | None = None,
+    session_id: str | None = None,
+    cancellation_registry: ScanCancellationRegistry | None = None,
 ) -> LLMInvocationResult:
     """Dispatch to the appropriate LLM CLI.
 
@@ -254,6 +344,9 @@ def run_llm(
             cwd=cwd,
             model=model,
             should_cancel=should_cancel,
+            on_progress=on_progress,
+            session_id=session_id,
+            cancellation_registry=cancellation_registry,
         )
     else:
         output = run_claude(
@@ -262,5 +355,8 @@ def run_llm(
             cwd=cwd,
             model=model,
             should_cancel=should_cancel,
+            on_progress=on_progress,
+            session_id=session_id,
+            cancellation_registry=cancellation_registry,
         )
     return LLMInvocationResult(provider=resolved_provider, output=output)

@@ -826,6 +826,10 @@ def build_scan_output(args: argparse.Namespace) -> str:
         profile=args.profile,
         timeout_seconds=args.timeout_seconds,
         should_cancel=getattr(args, "should_cancel", None),
+        on_progress=getattr(args, "on_progress", None),
+        env_overrides=getattr(args, "aws_env", None),
+        session_id=getattr(args, "session_id", None),
+        cancellation_registry=getattr(args, "cancellation_registry", None),
     )
 
     (

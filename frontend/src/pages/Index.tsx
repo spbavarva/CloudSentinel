@@ -1,8 +1,9 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Shield, RotateCcw } from 'lucide-react';
-import { LLMProvider, ServiceType, ServiceAnalysis, SSEEvent, ErrorCategory } from '@/lib/types';
+import { LLMProvider, ProgressEvent, ProgressKind, ProgressPhase, ServiceType, ServiceAnalysis, SSEEvent, ErrorCategory } from '@/lib/types';
 import { cancelScan, checkHealth, startScan, getScan } from '@/lib/api';
+import ScanActivity from '@/components/ScanActivity';
 import ScanConfiguration from '@/components/ScanConfiguration';
 import ScanProgress, { ServiceStatus } from '@/components/ScanProgress';
 import ResultCard from '@/components/ResultCard';
@@ -27,6 +28,22 @@ interface ServiceProgress {
   message: string;
 }
 
+interface ActivityEntry {
+  id: string;
+  service: ServiceType;
+  message: string;
+  phase?: ProgressPhase;
+  progressKind?: ProgressKind;
+  detail?: string;
+  commandLabel?: string;
+  awsService?: string;
+  commandName?: string;
+  startedAt?: string;
+  provider?: LLMProvider;
+  aiStage?: string;
+  elapsedSeconds?: number;
+}
+
 const ERROR_HELP: Record<ErrorCategory, string> = {
   auth: 'Check that your AWS credentials are correct and have the required IAM permissions.',
   timeout: 'The scan took too long. Try selecting fewer services or check your network.',
@@ -41,6 +58,7 @@ export default function Index() {
   const [errors, setErrors] = useState<Map<ServiceType, { message: string; category?: ErrorCategory }>>(new Map());
   const [scanDone, setScanDone] = useState(false);
   const [historyDetails, setHistoryDetails] = useState<ServiceAnalysis[]>([]);
+  const [activityLog, setActivityLog] = useState<ActivityEntry[]>([]);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [showStopConfirm, setShowStopConfirm] = useState(false);
   const [isStopping, setIsStopping] = useState(false);
@@ -54,6 +72,19 @@ export default function Index() {
       .catch(() => setBackendOnline(false));
   }, []);
 
+  const appendActivity = useCallback((entry: Omit<ActivityEntry, 'id'>) => {
+    setActivityLog(prev => {
+      const next = [
+        ...prev,
+        {
+          id: `${Date.now()}-${entry.service}-${entry.phase ?? 'scan'}-${prev.length}`,
+          ...entry,
+        },
+      ];
+      return next.slice(-150);
+    });
+  }, []);
+
   const resetToConfig = useCallback(() => {
     abortRef.current = null;
     setActiveSessionId(null);
@@ -64,22 +95,24 @@ export default function Index() {
     setResults(new Map());
     setErrors(new Map());
     setHistoryDetails([]);
+    setActivityLog([]);
     setView('config');
   }, []);
 
-  const stopActiveScan = useCallback(async () => {
+  const stopActiveScan = useCallback(() => {
     const sessionId = activeSessionId;
     setIsStopping(true);
-    try {
-      if (sessionId) {
-        await cancelScan(sessionId).catch((err) => {
-          console.error('Failed to request scan cancellation:', err);
-        });
-      }
-    } finally {
-      abortRef.current?.abort();
-      refreshHistory();
-      resetToConfig();
+
+    // Leave the scan view immediately so the user isn't stuck on a slow cancel request.
+    abortRef.current?.abort();
+    resetToConfig();
+    refreshHistory();
+
+    if (sessionId) {
+      cancelScan(sessionId);
+      window.setTimeout(() => {
+        refreshHistory();
+      }, 600);
     }
   }, [activeSessionId, refreshHistory, resetToConfig]);
 
@@ -98,6 +131,7 @@ export default function Index() {
     setResults(new Map());
     setErrors(new Map());
     setHistoryDetails([]);
+    setActivityLog([]);
     setShowStopConfirm(false);
     setIsStopping(false);
 
@@ -112,8 +146,26 @@ export default function Index() {
     const controller = new AbortController();
     abortRef.current = controller;
 
+    const appendProgressActivity = (event: ProgressEvent) => {
+      appendActivity({
+        service: event.service,
+        message: event.message,
+        phase: event.phase,
+        progressKind: event.progress_kind,
+        detail: event.detail,
+        commandLabel: event.command_label,
+        awsService: event.aws_service,
+        commandName: event.command_name,
+        startedAt: event.started_at,
+        provider: event.provider,
+        aiStage: event.ai_stage,
+        elapsedSeconds: event.elapsed_seconds,
+      });
+    };
+
     const handleEvent = (event: SSEEvent) => {
       if (event.type === 'progress') {
+        appendProgressActivity(event);
         setServiceProgress(prev =>
           prev.map(p =>
             p.service === event.service
@@ -122,6 +174,14 @@ export default function Index() {
           )
         );
       } else if (event.type === 'result') {
+        appendActivity({
+          service: event.service,
+          message: `${event.service.toUpperCase()} analysis complete.`,
+          phase: 'validate',
+          progressKind: 'phase',
+          detail: 'Findings and attack paths are ready.',
+          startedAt: new Date().toISOString(),
+        });
         setResults(prev => new Map(prev).set(event.service, event.analysis));
         setServiceProgress(prev =>
           prev.map(p =>
@@ -131,6 +191,14 @@ export default function Index() {
           )
         );
       } else if (event.type === 'error') {
+        appendActivity({
+          service: event.service,
+          message: `${event.service.toUpperCase()} scan failed.`,
+          phase: 'validate',
+          progressKind: 'phase',
+          detail: event.message,
+          startedAt: new Date().toISOString(),
+        });
         setErrors(prev => new Map(prev).set(event.service, {
           message: event.message,
           category: event.category,
@@ -143,6 +211,14 @@ export default function Index() {
           )
         );
       } else if (event.type === 'cancelled') {
+        appendActivity({
+          service: event.service,
+          message: `${event.service.toUpperCase()} scan cancelled.`,
+          phase: 'validate',
+          progressKind: 'phase',
+          detail: event.message,
+          startedAt: new Date().toISOString(),
+        });
         setServiceProgress(prev =>
           prev.map(p =>
             p.service === event.service
@@ -153,6 +229,15 @@ export default function Index() {
         setScanDone(true);
         refreshHistory();
       } else if (event.type === 'done') {
+        const activeService = config.services[config.services.length - 1];
+        appendActivity({
+          service: activeService,
+          message: 'Scan session complete.',
+          phase: 'validate',
+          progressKind: 'phase',
+          detail: 'All selected services have finished processing.',
+          startedAt: new Date().toISOString(),
+        });
         setScanDone(true);
         refreshHistory();
       }
@@ -176,7 +261,7 @@ export default function Index() {
         setScanDone(true);
       }
     });
-  }, [refreshHistory]);
+  }, [appendActivity, refreshHistory]);
 
   const handleBack = useCallback(() => {
     if (scanDone) {
@@ -389,19 +474,11 @@ export default function Index() {
                     </motion.div>
                   ))}
 
-                  {/* Skeleton */}
-                  {!scanDone && results.size === 0 && errors.size === 0 && (
-                    <div className="space-y-4">
-                      {[1, 2].map(i => (
-                        <div key={i} className="glass rounded-2xl p-6 scan-pulse">
-                          <div className="h-4 w-32 rounded-lg bg-muted/30 mb-4" />
-                          <div className="space-y-2.5">
-                            <div className="h-3 w-full rounded-lg bg-muted/20" />
-                            <div className="h-3 w-2/3 rounded-lg bg-muted/20" />
-                          </div>
-                        </div>
-                      ))}
-                    </div>
+                  {!scanDone && (
+                    <ScanActivity
+                      items={activityLog}
+                      isScanning={!scanDone}
+                    />
                   )}
 
                   </div>{/* end relative wrapper */}

@@ -5,6 +5,8 @@ export type ServiceType = 'ec2' | 's3' | 'iam' | 'vpc' | 'rds' | 'ebs' | 'ami' |
 export type LLMProvider = 'auto' | 'codex' | 'claude';
 export type ErrorCategory = 'auth' | 'timeout' | 'unknown';
 export type ScanStatus = 'running' | 'completed' | 'failed' | 'cancelled';
+export type ProgressPhase = 'scan' | 'parse' | 'prompt' | 'analysis' | 'validate';
+export type ProgressKind = 'phase' | 'command' | 'ai';
 
 export interface Finding {
   id: string;
@@ -74,6 +76,16 @@ export interface ProgressEvent {
   type: 'progress';
   service: ServiceType;
   message: string;
+  phase?: ProgressPhase;
+  progress_kind?: ProgressKind;
+  detail?: string;
+  command_label?: string;
+  aws_service?: string;
+  command_name?: string;
+  started_at?: string;
+  provider?: LLMProvider;
+  ai_stage?: string;
+  elapsed_seconds?: number;
 }
 
 export interface ResultEvent {

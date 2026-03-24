@@ -62,13 +62,32 @@ export async function startScan(
   }
 }
 
-export async function cancelScan(sessionId: string): Promise<void> {
-  const res = await fetch(`${API_BASE_URL}/scans/${encodeURIComponent(sessionId)}/cancel`, {
-    method: 'POST',
-  });
+export function cancelScan(sessionId: string): void {
+  const url = `${API_BASE_URL}/scans/${encodeURIComponent(sessionId)}/cancel`;
+  if (typeof navigator !== 'undefined' && typeof navigator.sendBeacon === 'function') {
+    try {
+      const payload = new Blob(['{}'], { type: 'text/plain;charset=UTF-8' });
+      if (navigator.sendBeacon(url, payload)) {
+        return;
+      }
+    } catch {
+      // Fall back to fetch below.
+    }
+  }
 
-  if (!res.ok && res.status !== 404) {
-    throw new Error('Failed to cancel scan');
+  try {
+    void fetch(url, {
+      method: 'POST',
+      keepalive: true,
+      headers: {
+        'Content-Type': 'text/plain;charset=UTF-8',
+      },
+      body: '{}',
+    }).catch((error) => {
+      console.error('Failed to request scan cancellation:', error);
+    });
+  } catch (error) {
+    console.error('Failed to dispatch scan cancellation:', error);
   }
 }
 

@@ -29,7 +29,7 @@ import json
 import sys
 import uuid
 from pathlib import Path
-from typing import AsyncGenerator
+from typing import Any, AsyncGenerator
 
 from fastapi import FastAPI, Request, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -154,6 +154,25 @@ def _sse(payload: dict) -> str:
     return f"data: {json.dumps(payload)}\n\n"
 
 
+def _progress_event(service: str, payload: str | dict[str, Any]) -> dict[str, Any]:
+    if isinstance(payload, str):
+        return {
+            "type": "progress",
+            "service": service,
+            "message": payload,
+        }
+
+    event: dict[str, Any] = {
+        "type": "progress",
+        "service": service,
+        "message": str(payload.get("message", "")),
+    }
+    for key, value in payload.items():
+        if key not in {"type", "service", "message"}:
+            event[key] = value
+    return event
+
+
 def _run_scan_job(
     *,
     scan_id: str,
@@ -259,9 +278,9 @@ async def scan(
             )
 
             # ── Progress bridge ───────────────────────────────────────────
-            progress_queue: asyncio.Queue[str] = asyncio.Queue()
+            progress_queue: asyncio.Queue[str | dict[str, Any]] = asyncio.Queue()
 
-            def on_progress(message: str) -> None:
+            def on_progress(message: str | dict[str, Any]) -> None:
                 loop.call_soon_threadsafe(progress_queue.put_nowait, message)
 
             # ── Build pipeline kwargs ─────────────────────────────────────
@@ -284,6 +303,8 @@ async def scan(
                     redact_keys.append(creds.session_token)
 
             pipeline_kwargs["should_cancel"] = scan_cancellations.should_cancel(session_id)
+            pipeline_kwargs["session_id"] = session_id
+            pipeline_kwargs["cancellation_registry"] = scan_cancellations
 
             # ── Start pipeline in thread pool ─────────────────────────────
             scan_cancellations.begin_job(session_id)
@@ -304,14 +325,14 @@ async def scan(
                     message = await asyncio.wait_for(
                         progress_queue.get(), timeout=0.3
                     )
-                    yield _sse({"type": "progress", "service": service, "message": message})
+                    yield _sse(_progress_event(service, message))
                 except asyncio.TimeoutError:
                     pass
 
             # Flush remaining progress messages
             while not progress_queue.empty():
                 message = progress_queue.get_nowait()
-                yield _sse({"type": "progress", "service": service, "message": message})
+                yield _sse(_progress_event(service, message))
 
             # ── Emit result or error ──────────────────────────────────────
             try:
@@ -380,7 +401,7 @@ async def delete_session(session_id: str) -> dict:
 async def cancel_session(session_id: str) -> dict:
     """Request cancellation for a running scan session."""
     known_session = scan_cancellations.has_session(session_id)
-    scan_cancellations.request_cancel(session_id)
+    terminated_processes = scan_cancellations.request_cancel(session_id)
     cancelled_rows = store.cancel_session(session_id, "Scan cancelled by user.")
     if not known_session and cancelled_rows == 0:
         scan_cancellations.clear(session_id)
@@ -389,6 +410,7 @@ async def cancel_session(session_id: str) -> dict:
         "status": "cancel_requested",
         "session_id": session_id,
         "cancelled_rows": cancelled_rows,
+        "terminated_processes": terminated_processes,
     }
 
 

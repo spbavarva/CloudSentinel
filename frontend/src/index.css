@@ -162,4 +162,78 @@
     border-color: hsl(263 84% 58% / 0.3);
     box-shadow: 0 0 20px -8px hsl(263 84% 58% / 0.15);
   }
+
+  .ai-heartbeat-card {
+    background:
+      radial-gradient(circle at 20% 20%, hsl(200 100% 70% / 0.08), transparent 35%),
+      linear-gradient(180deg, hsl(240 14% 11% / 0.96), hsl(240 10% 8% / 0.92));
+    box-shadow:
+      inset 0 1px 0 hsl(0 0% 100% / 0.03),
+      0 0 40px -22px hsl(200 100% 70% / 0.45);
+  }
+
+  .ai-heartbeat-dot {
+    width: 0.6rem;
+    height: 0.6rem;
+    border-radius: 9999px;
+    background: hsl(190 100% 72%);
+    box-shadow:
+      0 0 0 0 hsl(190 100% 72% / 0.35),
+      0 0 20px hsl(190 100% 72% / 0.65);
+    animation: heartbeatDot 1.8s ease-out infinite;
+    flex-shrink: 0;
+  }
+
+  .ai-heartbeat-wave {
+    fill: none;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  .ai-heartbeat-wave-base {
+    stroke: hsl(190 45% 55% / 0.22);
+    stroke-width: 1.5;
+  }
+
+  .ai-heartbeat-wave-glow {
+    stroke: hsl(190 100% 72% / 0.22);
+    stroke-width: 6;
+    filter: blur(6px);
+  }
+
+  .ai-heartbeat-wave-trace {
+    stroke: hsl(190 100% 78%);
+    stroke-width: 2.2;
+    filter: drop-shadow(0 0 10px hsl(190 100% 72% / 0.6));
+    stroke-dasharray: 100;
+    stroke-dashoffset: 100;
+    animation: heartbeatTrace 2.4s linear infinite;
+  }
+
+  @keyframes heartbeatTrace {
+    0% { stroke-dashoffset: 100; opacity: 0.85; }
+    35% { opacity: 1; }
+    100% { stroke-dashoffset: 0; opacity: 0.92; }
+  }
+
+  @keyframes heartbeatDot {
+    0% {
+      transform: scale(0.92);
+      box-shadow:
+        0 0 0 0 hsl(190 100% 72% / 0.35),
+        0 0 18px hsl(190 100% 72% / 0.55);
+    }
+    60% {
+      transform: scale(1.08);
+      box-shadow:
+        0 0 0 10px hsl(190 100% 72% / 0),
+        0 0 22px hsl(190 100% 72% / 0.8);
+    }
+    100% {
+      transform: scale(0.95);
+      box-shadow:
+        0 0 0 0 hsl(190 100% 72% / 0),
+        0 0 18px hsl(190 100% 72% / 0.45);
+    }
+  }
 }

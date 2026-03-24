@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+import subprocess
 import threading
-from typing import Callable
+from typing import Any, Callable
 
 
 class ScanCancelledError(RuntimeError):
@@ -15,6 +16,7 @@ class ScanCancellationRegistry:
         self._lock = threading.Lock()
         self._events: dict[str, threading.Event] = {}
         self._active_jobs: dict[str, int] = {}
+        self._processes: dict[str, set[subprocess.Popen[Any]]] = {}
 
     def begin_job(self, session_id: str) -> None:
         with self._lock:
@@ -27,14 +29,20 @@ class ScanCancellationRegistry:
             if current <= 1:
                 self._active_jobs.pop(session_id, None)
                 self._events.pop(session_id, None)
+                self._processes.pop(session_id, None)
                 return
             self._active_jobs[session_id] = current - 1
 
-    def request_cancel(self, session_id: str) -> bool:
+    def request_cancel(self, session_id: str) -> int:
+        processes: list[subprocess.Popen[Any]]
         with self._lock:
             event = self._events.setdefault(session_id, threading.Event())
             event.set()
-            return True
+            processes = list(self._processes.get(session_id, ()))
+
+        for process in processes:
+            self._terminate_process(process)
+        return len(processes)
 
     def is_cancelled(self, session_id: str) -> bool:
         with self._lock:
@@ -43,12 +51,43 @@ class ScanCancellationRegistry:
 
     def has_session(self, session_id: str) -> bool:
         with self._lock:
-            return session_id in self._events or session_id in self._active_jobs
+            return (
+                session_id in self._events
+                or session_id in self._active_jobs
+                or session_id in self._processes
+            )
 
     def should_cancel(self, session_id: str) -> Callable[[], bool]:
         return lambda: self.is_cancelled(session_id)
+
+    def register_process(self, session_id: str, process: subprocess.Popen[Any]) -> None:
+        with self._lock:
+            self._processes.setdefault(session_id, set()).add(process)
+
+    def unregister_process(self, session_id: str, process: subprocess.Popen[Any]) -> None:
+        with self._lock:
+            processes = self._processes.get(session_id)
+            if not processes:
+                return
+            processes.discard(process)
+            if not processes and session_id not in self._active_jobs:
+                self._processes.pop(session_id, None)
 
     def clear(self, session_id: str) -> None:
         with self._lock:
             self._events.pop(session_id, None)
             self._active_jobs.pop(session_id, None)
+            self._processes.pop(session_id, None)
+
+    @staticmethod
+    def _terminate_process(process: subprocess.Popen[Any]) -> None:
+        if process.poll() is not None:
+            return
+        try:
+            process.terminate()
+            process.wait(timeout=0.4)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.wait(timeout=0.4)
+        except OSError:
+            pass
